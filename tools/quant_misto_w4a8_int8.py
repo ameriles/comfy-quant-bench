@@ -15,6 +15,10 @@ das camadas com forma/dtype diferente da fonte, camada INT8 com K nao divisivel 
 Cada camada INT8 e conferida pelo dequantizador real do ComfyUI (TensorWiseINT8Layout) contra a fonte; o erro
 vai para o sidecar. Isso prova o formato, nao a qualidade -- qualidade e render.
 
+O preset ``ltx25-audio-safe`` e deliberadamente estrito: promove para INT8 as 912 Linears dos caminhos
+de audio, audio<->video e ``audio_embeddings_connector`` do LTX 2.5 oficial, deixando 528 Linears de
+video em W4A8. Ele recusa outra arquitetura, outro formato-base ou qualquer contagem diferente.
+
     python_embeded\\python.exe -s tools/quant_misto_w4a8_int8.py --fonte P:/ComfyBench/checkpoints/10Eros_v1.5_bf16.safetensors \\
         --w4a8 P:/ComfyBench/checkpoints/10Eros_v1.5_bf16_w4a8.safetensors --dry-run
 """
@@ -39,6 +43,61 @@ from quant_int8 import quantize  # noqa: E402
 from _conversion import read_header, read_tensor  # noqa: E402
 
 REGEX_AUDIO = r"(?:^|\.)(?:audio_attn\d+|audio_ff|audio_to_video_attn|video_to_audio_attn)\."
+LTX25_AUDIO_SAFE = "ltx25-audio-safe"
+LTX25_AUDIO_FAMILIES = {
+    "audio_embeddings_connector": 48,
+    "audio_attn1": 192,
+    "audio_attn2": 192,
+    "audio_ff": 96,
+    "audio_to_video_attn": 192,
+    "video_to_audio_attn": 192,
+}
+REGEX_LTX25_AUDIO_SAFE = (
+    r"(?:^|\.)(?:audio_embeddings_connector|audio_attn\d+|audio_ff|"
+    r"audio_to_video_attn|video_to_audio_attn)\."
+)
+PRESET_REGEX = {LTX25_AUDIO_SAFE: REGEX_LTX25_AUDIO_SAFE}
+
+
+def validate_ltx25_audio_safe(camadas: dict, alvo: list[str], sidecar: dict) -> None:
+    """Recusa silencios perigosos: este preset so vale para o LTX 2.5 oficial medido."""
+    expected_sidecar = {
+        "architecture": "ltx_2_5",
+        "quantization": "asym_w4a8_int8",
+        "quantized_tensors": 1440,
+        "preserved_tensors": 2909,
+    }
+    for key, expected in expected_sidecar.items():
+        if sidecar.get(key) != expected:
+            raise SystemExit(
+                f"RECUSADO: preset {LTX25_AUDIO_SAFE} exige sidecar {key}={expected!r}, "
+                f"recebeu {sidecar.get(key)!r}"
+            )
+
+    if len(camadas) != 1440:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_AUDIO_SAFE} exige 1440 camadas quantizadas, "
+            f"recebeu {len(camadas)}"
+        )
+    formatos = {config.get("format") for config in camadas.values()}
+    if formatos != {"asym_w4a8_int8"}:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_AUDIO_SAFE} exige base W4A8 uniforme, "
+            f"recebeu {sorted(str(value) for value in formatos)}"
+        )
+
+    family_counts = {family: sum(family in name for name in alvo)
+                     for family in LTX25_AUDIO_FAMILIES}
+    if family_counts != LTX25_AUDIO_FAMILIES:
+        raise SystemExit(
+            f"RECUSADO: familias do preset {LTX25_AUDIO_SAFE} diferem: "
+            f"esperado {LTX25_AUDIO_FAMILIES}, recebeu {family_counts}"
+        )
+    if len(alvo) != 912 or len(camadas) - len(alvo) != 528:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_AUDIO_SAFE} exige 912 INT8 + 528 W4A8; "
+            f"recebeu {len(alvo)} + {len(camadas) - len(alvo)}"
+        )
 
 
 def main() -> int:
@@ -46,34 +105,50 @@ def main() -> int:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--fonte", required=True, type=Path, help="checkpoint BF16 de onde o W4A8 saiu")
     p.add_argument("--w4a8", required=True, type=Path, help="checkpoint W4A8 pronto (base da copia)")
-    p.add_argument("--regex", default=REGEX_AUDIO, help="camadas (nome sem .weight) que viram INT8")
+    selecao = p.add_mutually_exclusive_group()
+    selecao.add_argument("--preset", choices=sorted(PRESET_REGEX),
+                         help="receita estrita com contagens e proveniencia conhecidas")
+    selecao.add_argument("--regex", help="camadas (nome sem .weight) que viram INT8")
     p.add_argument("--convrot-groupsize", type=int, default=256)
     p.add_argument("--output", type=Path, default=None)
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
 
-    fonte, base = a.fonte.resolve(), a.w4a8.resolve()
-    output = (a.output or base.with_name(base.stem + "_audioint8.safetensors")).resolve()
+    fonte = a.fonte.resolve()
+    # Preserva o caminho fornecido para encontrar o sidecar ao lado de uma referencia simbolica,
+    # mas abre os pesos pelo alvo real. Assim o laboratorio nao precisa duplicar o W4A8 de 12,5 GB.
+    base_ref = a.w4a8.absolute()
+    base = base_ref.resolve()
+    output = (a.output or base_ref.with_name(base_ref.stem + "_audioint8.safetensors")).resolve()
     sidecar = output.with_suffix(".quant.json")
     conv = C.Conversion(base, output, sidecar)
     conv.refuse_unsafe(allow_quantized_source=True)  # a base E quantizada por construcao
     hb, mb = conv.header, conv.metadata
     hf, _ = read_header(fonte)
 
-    side_base = base.with_suffix(".quant.json")
+    side_base = base_ref.with_suffix(".quant.json")
     if side_base.is_file():
-        tam = json.loads(side_base.read_text(encoding="utf-8")).get("source_size")
+        side_base_data = json.loads(side_base.read_text(encoding="utf-8"))
+        tam = side_base_data.get("source_size")
         if tam != fonte.stat().st_size:
             raise SystemExit(f"RECUSADO: o W4A8 veio de uma fonte de {tam} B, esta tem {fonte.stat().st_size} B")
+        output_size = side_base_data.get("output_size")
+        if output_size != base.stat().st_size:
+            raise SystemExit(
+                f"RECUSADO: sidecar declara W4A8 de {output_size} B, arquivo tem {base.stat().st_size} B"
+            )
     else:
         raise SystemExit(f"RECUSADO: sem sidecar {side_base} para provar de que fonte o W4A8 saiu")
 
     qmeta = json.loads(mb["_quantization_metadata"])
     camadas = qmeta["layers"]
-    rx = re.compile(a.regex)
+    regex_int8 = PRESET_REGEX[a.preset] if a.preset else (a.regex or REGEX_AUDIO)
+    rx = re.compile(regex_int8)
     alvo = sorted(n for n in camadas if rx.search(n))
     if not alvo:
         raise SystemExit("RECUSADO: --regex nao casou nenhuma camada quantizada")
+    if a.preset == LTX25_AUDIO_SAFE:
+        validate_ltx25_audio_safe(camadas, alvo, side_base_data)
     for n in alvo:
         info = hf.get(n + ".weight")
         if info is None or len(info["shape"]) != 2:
@@ -95,6 +170,8 @@ def main() -> int:
     bytes_sai = sum(hb[k]["data_offsets"][1] - hb[k]["data_offsets"][0] for k in sai)
     tam_saida = base.stat().st_size - bytes_sai + bytes_int8 + sum(hf[n + ".weight"]["shape"][0] * 4 for n in alvo)
     print(f"base {base.name}: {len(camadas)} camadas quantizadas; {len(alvo)} viram INT8 ConvRot")
+    if a.preset:
+        print(f"preset {a.preset}: {len(alvo)} INT8 + {len(camadas) - len(alvo)} W4A8")
     for n in alvo[:6]:
         print(f"  {n}  {hf[n + '.weight']['shape']}")
     print(f"  ... saida estimada {tam_saida / 2**30:.2f} GiB (base {base.stat().st_size / 2**30:.2f})  -> {output}")
@@ -169,7 +246,8 @@ def main() -> int:
     conv.write_sidecar({
         "fonte": str(fonte), "fonte_size": fonte.stat().st_size, "base_w4a8": str(base),
         "base_size": base.stat().st_size, "output": str(output), "output_size": output.stat().st_size,
-        "regex_int8": a.regex, "camadas_int8": len(alvo), "camadas_w4a8": len(camadas) - len(alvo),
+        "preset": a.preset, "regex_int8": regex_int8,
+        "camadas_int8": len(alvo), "camadas_w4a8": len(camadas) - len(alvo),
         "int8": {"format": "int8_tensorwise", "convrot": True, "convrot_groupsize": a.convrot_groupsize},
         "erro_rel_int8_vs_fonte": {"mediana": vals[len(vals) // 2], "max": vals[-1],
                                    "pior": max(erros, key=erros.get)},
