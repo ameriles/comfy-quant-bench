@@ -6496,3 +6496,24 @@ tudo"; depois medir na GPU e pôr a flag do triton nos launchers. Achados e corr
   - Falta confirmar no navegador do dono.
 - NAS lento (2026-09-29): `ComfyUI/utils/extra_config.py` pula a seção do `extra_model_paths.yaml` que não responde em 10 s. Patch: `patches/comfyui_extra_paths_timeout.patch`.
 - O patch local preexistente de `ComfyUI-nunchaku/models/qwenimage.py` (+46 linhas, origem anterior) foi exportado para `patches/nunchaku_models_qwenimage_preexistente.patch`.
+
+## Parte 72 -- 2026-10-05: LTX 2.5 híbrido guiado pelo mapa do Q4_K_M
+
+Pedido do dono: reduzir o primeiro híbrido de 912 INT8 + 528 W4A8 usando como referência nominal o
+`LTX-2.5-Distilled-Q4_K_M.gguf`, que preserva lipsync no workflow real. Cruzamento por nome das mesmas 912
+Linears: Q4_K 172, Q5_K 684, Q6_K 56. Como o pipeline nativo não oferece W5, a receita conservadora ficou
+Q4_K -> W4A8 e Q5_K/Q6_K -> INT8 ConvRot; os 200 `to_gate_logits` que não pertencem às 1440 Linears
+quantizadas continuam BF16.
+
+- Preset estrito novo: `ltx25-q4km-audio-balanced`; recusa arquitetura/base/contagens diferentes.
+- Resultado: **740 INT8 + 700 W4A8**, 14.637.593.776 B (13,63 GiB), em 168,9 s.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,009257; máximo 0,011003.
+- Auditoria independente do header contra o GGUF: 172 Q4_K -> W4A8, 684 Q5_K -> INT8,
+  56 Q6_K -> INT8; **0 discrepâncias**.
+- GGUF de referência SHA256: `0f51eb0d82b19bddbfb3b0371a65217844ea03750f27dd733528f22152e0e0d0`.
+- Checkpoint SHA256: `072ecf899806a40542b52be75d5db5ca97c81a792f21b968c7e2244c143f7bad`.
+- Arquivo: `/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-balanced.safetensors`.
+- Inventário: `/home/agustin/Models/LTX-2.5-quant-lab/results/ltx25-q4km-audio-balanced-audit.{json,md}`.
+
+Isto aprova estrutura e proveniência, não qualidade. Próximo critério: carregar pelo nó real e repetir o mesmo
+workflow, prompt, seed e distribuição usados no híbrido 912/528, comparando áudio/lipsync, OOM e s/it.

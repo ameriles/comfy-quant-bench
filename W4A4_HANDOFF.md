@@ -873,3 +873,15 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 
 Estado completo, o que está rodando e os próximos passos em ordem: `.scratch/HANDOFF_ltx23_2026-09-14.md`.
 Probes do mecanismo copiados para `tools/probe_commit_mmap.py`, `tools/probe_safeopen_trace.py`, `tools/probe_double_map.py`, `tools/probe_cow_offset.py`; novos `tools/safetensors_to_gguf_bf16.py` e `tools/probe_gguf_bf16_equivalence.py` (nenhum commitado ainda).
+
+## 2026-10-05 -- LTX 2.5 Q4_K_M-guided audio balance
+
+Novo preset `ltx25-q4km-audio-balanced` em `tools/quant_misto_w4a8_int8.py`. Ele parte do BF16 e da
+base W4A8 conhecidos, deixa em W4A8 as 172 Linears de áudio que o GGUF de referência guarda em Q4_K e
+promove as 684 Q5_K + 56 Q6_K para INT8 ConvRot. Build concluído: 740 INT8 + 700 W4A8, 13,63 GiB,
+SHA256 `072ecf899806a40542b52be75d5db5ca97c81a792f21b968c7e2244c143f7bad`; cruzamento independente
+de metadata deu zero discrepâncias. Artefato em
+`/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-balanced.safetensors`.
+
+Pendente: loader real e render pareado no workflow do dono. Estrutura, erro por camada e dispatch declarado não
+aprovam áudio, lipsync ou qualidade visual.

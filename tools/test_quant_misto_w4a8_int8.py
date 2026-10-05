@@ -3,18 +3,35 @@ import unittest
 
 from quant_misto_w4a8_int8 import (
     LTX25_AUDIO_FAMILIES,
+    LTX25_Q4KM_INT8_FAMILIES,
+    LTX25_Q4KM_W4A8_FAMILIES,
     REGEX_LTX25_AUDIO_SAFE,
+    is_ltx25_q4km_q4,
+    select_ltx25_q4km_audio_balanced,
     validate_ltx25_audio_safe,
 )
 
 
 def ltx25_fixture():
     layers = {}
-    for family, count in LTX25_AUDIO_FAMILIES.items():
-        for index in range(count):
-            layers[f"model.diffusion_model.{family}.{index}"] = {
-                "format": "asym_w4a8_int8"
-            }
+    prefix = "model.diffusion_model"
+    for block in range(8):
+        base = f"{prefix}.audio_embeddings_connector.transformer_1d_blocks.{block}"
+        for suffix in (
+            "attn1.to_k", "attn1.to_out.0", "attn1.to_q", "attn1.to_v",
+            "ff.net.0.proj", "ff.net.2",
+        ):
+            layers[f"{base}.{suffix}"] = {"format": "asym_w4a8_int8"}
+    attention_families = (
+        "audio_attn1", "audio_attn2", "audio_to_video_attn", "video_to_audio_attn"
+    )
+    for block in range(48):
+        base = f"{prefix}.transformer_blocks.{block}"
+        for family in attention_families:
+            for suffix in ("to_k", "to_out.0", "to_q", "to_v"):
+                layers[f"{base}.{family}.{suffix}"] = {"format": "asym_w4a8_int8"}
+        for suffix in ("net.0.proj", "net.2"):
+            layers[f"{base}.audio_ff.{suffix}"] = {"format": "asym_w4a8_int8"}
     for index in range(528):
         layers[f"model.diffusion_model.video_path.{index}"] = {
             "format": "asym_w4a8_int8"
@@ -59,6 +76,34 @@ class LTX25AudioSafeGuardTests(unittest.TestCase):
 
         with self.assertRaisesRegex(SystemExit, "base W4A8 uniforme"):
             validate_ltx25_audio_safe(layers, targets, sidecar)
+
+    def test_q4km_balanced_exact_recipe(self):
+        layers, _, sidecar = ltx25_fixture()
+
+        int8 = select_ltx25_q4km_audio_balanced(layers, sidecar)
+        audio = [name for name in layers if any(family in name for family in LTX25_AUDIO_FAMILIES)]
+        w4a8 = [name for name in audio if is_ltx25_q4km_q4(name)]
+
+        self.assertEqual(len(int8), 740)
+        self.assertEqual(len(w4a8), 172)
+        self.assertEqual(len(layers) - len(int8), 700)
+        self.assertEqual(
+            {family: sum(family in name for name in int8) for family in LTX25_AUDIO_FAMILIES},
+            LTX25_Q4KM_INT8_FAMILIES,
+        )
+        self.assertEqual(
+            {family: sum(family in name for name in w4a8) for family in LTX25_AUDIO_FAMILIES},
+            LTX25_Q4KM_W4A8_FAMILIES,
+        )
+
+    def test_q4km_balanced_rejects_changed_map(self):
+        layers, _, sidecar = ltx25_fixture()
+        removed = "model.diffusion_model.transformer_blocks.17.audio_ff.net.2"
+        del layers[removed]
+        layers["model.diffusion_model.video_path.replacement"] = {"format": "asym_w4a8_int8"}
+
+        with self.assertRaisesRegex(SystemExit, "familias"):
+            select_ltx25_q4km_audio_balanced(layers, sidecar)
 
 
 if __name__ == "__main__":

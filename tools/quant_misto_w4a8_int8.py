@@ -19,6 +19,11 @@ O preset ``ltx25-audio-safe`` e deliberadamente estrito: promove para INT8 as 91
 de audio, audio<->video e ``audio_embeddings_connector`` do LTX 2.5 oficial, deixando 528 Linears de
 video em W4A8. Ele recusa outra arquitetura, outro formato-base ou qualquer contagem diferente.
 
+O preset ``ltx25-q4km-audio-balanced`` reproduz, com os dois formatos nativos disponiveis, o mapa
+observado no LTX-2.5-Distilled-Q4_K_M.gguf do laboratorio: as 172 Linears de audio que o GGUF guarda
+em Q4_K permanecem W4A8; as 684 Q5_K e 56 Q6_K viram INT8 ConvRot. Resultado estrito: 740 INT8 +
+700 W4A8. Q5_K nao tem equivalente nativo neste pipeline, por isso ele e promovido para INT8.
+
     python_embeded\\python.exe -s tools/quant_misto_w4a8_int8.py --fonte P:/ComfyBench/checkpoints/10Eros_v1.5_bf16.safetensors \\
         --w4a8 P:/ComfyBench/checkpoints/10Eros_v1.5_bf16_w4a8.safetensors --dry-run
 """
@@ -44,6 +49,13 @@ from _conversion import read_header, read_tensor  # noqa: E402
 
 REGEX_AUDIO = r"(?:^|\.)(?:audio_attn\d+|audio_ff|audio_to_video_attn|video_to_audio_attn)\."
 LTX25_AUDIO_SAFE = "ltx25-audio-safe"
+LTX25_Q4KM_AUDIO_BALANCED = "ltx25-q4km-audio-balanced"
+LTX25_Q4KM_REFERENCE = {
+    "filename": "LTX-2.5-Distilled-Q4_K_M.gguf",
+    "sha256": "0f51eb0d82b19bddbfb3b0371a65217844ea03750f27dd733528f22152e0e0d0",
+    "same_audio_layers": {"Q4_K": 172, "Q5_K": 684, "Q6_K": 56},
+    "mapping": {"Q4_K": "asym_w4a8_int8", "Q5_K": "int8_tensorwise", "Q6_K": "int8_tensorwise"},
+}
 LTX25_AUDIO_FAMILIES = {
     "audio_embeddings_connector": 48,
     "audio_attn1": 192,
@@ -56,7 +68,42 @@ REGEX_LTX25_AUDIO_SAFE = (
     r"(?:^|\.)(?:audio_embeddings_connector|audio_attn\d+|audio_ff|"
     r"audio_to_video_attn|video_to_audio_attn)\."
 )
-PRESET_REGEX = {LTX25_AUDIO_SAFE: REGEX_LTX25_AUDIO_SAFE}
+PRESET_REGEX = {
+    LTX25_AUDIO_SAFE: REGEX_LTX25_AUDIO_SAFE,
+    LTX25_Q4KM_AUDIO_BALANCED: REGEX_LTX25_AUDIO_SAFE,
+}
+LTX25_Q4KM_Q4_BLOCKS = frozenset((*range(9), 17))
+LTX25_Q4KM_W4A8_FAMILIES = {
+    "audio_embeddings_connector": 32,
+    "audio_attn1": 30,
+    "audio_attn2": 30,
+    "audio_ff": 20,
+    "audio_to_video_attn": 30,
+    "video_to_audio_attn": 30,
+}
+LTX25_Q4KM_INT8_FAMILIES = {
+    family: LTX25_AUDIO_FAMILIES[family] - count
+    for family, count in LTX25_Q4KM_W4A8_FAMILIES.items()
+}
+
+
+def is_ltx25_q4km_q4(name: str) -> bool:
+    """Mapa nominal das 172 Linears que o GGUF de referencia armazena em Q4_K."""
+    connector = re.search(
+        r"(?:^|\.)audio_embeddings_connector\.transformer_1d_blocks\.(\d+)\."
+        r"(?:attn1\.(?:to_k|to_out\.0|to_q)|ff\.net\.0\.proj)$",
+        name,
+    )
+    if connector:
+        return 0 <= int(connector.group(1)) < 8
+
+    block = re.search(
+        r"(?:^|\.)transformer_blocks\.(\d+)\."
+        r"(?:(?:audio_attn1|audio_attn2|audio_to_video_attn|video_to_audio_attn)\."
+        r"(?:to_k|to_out\.0|to_q)|audio_ff\.net\.(?:0\.proj|2))$",
+        name,
+    )
+    return bool(block and int(block.group(1)) in LTX25_Q4KM_Q4_BLOCKS)
 
 
 def validate_ltx25_audio_safe(camadas: dict, alvo: list[str], sidecar: dict) -> None:
@@ -98,6 +145,36 @@ def validate_ltx25_audio_safe(camadas: dict, alvo: list[str], sidecar: dict) -> 
             f"RECUSADO: preset {LTX25_AUDIO_SAFE} exige 912 INT8 + 528 W4A8; "
             f"recebeu {len(alvo)} + {len(camadas) - len(alvo)}"
         )
+
+
+def select_ltx25_q4km_audio_balanced(camadas: dict, sidecar: dict) -> list[str]:
+    """Seleciona Q5_K/Q6_K como INT8 e deixa os equivalentes Q4_K em W4A8."""
+    regex = re.compile(REGEX_LTX25_AUDIO_SAFE)
+    audio = sorted(name for name in camadas if regex.search(name))
+    validate_ltx25_audio_safe(camadas, audio, sidecar)
+
+    w4a8 = sorted(name for name in audio if is_ltx25_q4km_q4(name))
+    int8 = sorted(set(audio) - set(w4a8))
+    w4a8_counts = {family: sum(family in name for name in w4a8)
+                   for family in LTX25_AUDIO_FAMILIES}
+    int8_counts = {family: sum(family in name for name in int8)
+                   for family in LTX25_AUDIO_FAMILIES}
+    if w4a8_counts != LTX25_Q4KM_W4A8_FAMILIES:
+        raise SystemExit(
+            f"RECUSADO: mapa Q4_K do preset {LTX25_Q4KM_AUDIO_BALANCED} difere: "
+            f"esperado {LTX25_Q4KM_W4A8_FAMILIES}, recebeu {w4a8_counts}"
+        )
+    if int8_counts != LTX25_Q4KM_INT8_FAMILIES or len(int8) != 740:
+        raise SystemExit(
+            f"RECUSADO: mapa Q5_K/Q6_K do preset {LTX25_Q4KM_AUDIO_BALANCED} difere: "
+            f"esperado {LTX25_Q4KM_INT8_FAMILIES}, recebeu {int8_counts} ({len(int8)} camadas)"
+        )
+    if len(w4a8) != 172 or len(camadas) - len(int8) != 700:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_Q4KM_AUDIO_BALANCED} exige 740 INT8 + 700 W4A8; "
+            f"recebeu {len(int8)} + {len(camadas) - len(int8)}"
+        )
+    return int8
 
 
 def main() -> int:
@@ -149,6 +226,8 @@ def main() -> int:
         raise SystemExit("RECUSADO: --regex nao casou nenhuma camada quantizada")
     if a.preset == LTX25_AUDIO_SAFE:
         validate_ltx25_audio_safe(camadas, alvo, side_base_data)
+    elif a.preset == LTX25_Q4KM_AUDIO_BALANCED:
+        alvo = select_ltx25_q4km_audio_balanced(camadas, side_base_data)
     for n in alvo:
         info = hf.get(n + ".weight")
         if info is None or len(info["shape"]) != 2:
@@ -243,11 +322,14 @@ def main() -> int:
     conv.commit(entradas, meta, progress=progresso)
     fh.close()
     vals = sorted(erros.values())
+    preset_details = ({"gguf_reference_map": LTX25_Q4KM_REFERENCE}
+                      if a.preset == LTX25_Q4KM_AUDIO_BALANCED else {})
     conv.write_sidecar({
         "fonte": str(fonte), "fonte_size": fonte.stat().st_size, "base_w4a8": str(base),
         "base_size": base.stat().st_size, "output": str(output), "output_size": output.stat().st_size,
         "preset": a.preset, "regex_int8": regex_int8,
         "camadas_int8": len(alvo), "camadas_w4a8": len(camadas) - len(alvo),
+        **preset_details,
         "int8": {"format": "int8_tensorwise", "convrot": True, "convrot_groupsize": a.convrot_groupsize},
         "erro_rel_int8_vs_fonte": {"mediana": vals[len(vals) // 2], "max": vals[-1],
                                    "pior": max(erros, key=erros.get)},
