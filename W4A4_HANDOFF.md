@@ -885,3 +885,14 @@ de metadata deu zero discrepâncias. Artefato em
 
 Pendente: loader real e render pareado no workflow do dono. Estrutura, erro por camada e dispatch declarado não
 aprovam áudio, lipsync ou qualidade visual.
+
+## 2026-10-05 -- braço Q6 visual
+
+O dono viu perda visual no 740/700 contra Q4_K_M. Criado `ltx25-q4km-audio-video-q6`: preserva a receita de
+áudio anterior e promove somente as 46 visuais Q6_K. Build **786 INT8 + 654 W4A8**, 14,3159 GiB,
+SHA256 `290d6629f1503a8e1fa675fd71db32a8b237a9cd2efb2d36df43da63d0b6774e`; cruzamento independente
+contra o GGUF deu zero discrepâncias. Arquivo em
+`/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-video-q6-int8.safetensors`.
+
+Pendente: symlink/loader real e comparação pareada com Q4_K_M e 740/700. Se a imagem continuar atrás, o dado
+aponta para as 380 visuais Q5_K que este braço deliberadamente deixou em W4A8.

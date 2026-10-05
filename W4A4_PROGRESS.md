@@ -6517,3 +6517,22 @@ quantizadas continuam BF16.
 
 Isto aprova estrutura e proveniência, não qualidade. Próximo critério: carregar pelo nó real e repetir o mesmo
 workflow, prompt, seed e distribuição usados no híbrido 912/528, comparando áudio/lipsync, OOM e s/it.
+
+## Parte 73 -- 2026-10-05: LTX 2.5 áudio protegido + Q6 visual em INT8
+
+Depois de o dono observar perda visual do braço 740/700 contra Q4_K_M, o cruzamento das 528 Linears visuais
+mostrou Q4_K 102, Q5_K 380 e Q6_K 46. Promover Q5+Q6 custaria 4,84 GiB; o experimento intermediário promove
+somente as 46 Q6_K visuais, mantendo as 380 Q5_K em W4A8.
+
+- Preset: `ltx25-q4km-audio-video-q6`.
+- Receita final: **786 INT8 + 654 W4A8**; 46 visuais novas = 16 do `video_embeddings_connector`,
+  10 `attn1.to_v`, 10 `attn2.to_v` e 10 `ff.net.2`.
+- Resultado: 15.371.580.168 B (14,3159 GiB), escrito em 213 s.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,0093; máximo 0,0110.
+- Auditoria independente contra o GGUF: áudio 172 Q4->W4A8, 684 Q5+56 Q6->INT8; vídeo
+  102 Q4+380 Q5->W4A8, 46 Q6->INT8; **0 discrepâncias**.
+- Checkpoint SHA256: `290d6629f1503a8e1fa675fd71db32a8b237a9cd2efb2d36df43da63d0b6774e`.
+- Arquivo: `/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-video-q6-int8.safetensors`.
+- Inventário: `/home/agustin/Models/LTX-2.5-quant-lab/results/ltx25-q4km-audio-video-q6-audit.{json,md}`.
+
+Estrutura aprovada; qualidade visual, áudio/lipsync, tempo e VRAM seguem pendentes do render pareado.

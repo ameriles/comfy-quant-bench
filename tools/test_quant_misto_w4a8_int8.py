@@ -7,7 +7,9 @@ from quant_misto_w4a8_int8 import (
     LTX25_Q4KM_W4A8_FAMILIES,
     REGEX_LTX25_AUDIO_SAFE,
     is_ltx25_q4km_q4,
+    is_ltx25_q4km_video_q6,
     select_ltx25_q4km_audio_balanced,
+    select_ltx25_q4km_audio_video_q6,
     validate_ltx25_audio_safe,
 )
 
@@ -32,10 +34,20 @@ def ltx25_fixture():
                 layers[f"{base}.{family}.{suffix}"] = {"format": "asym_w4a8_int8"}
         for suffix in ("net.0.proj", "net.2"):
             layers[f"{base}.audio_ff.{suffix}"] = {"format": "asym_w4a8_int8"}
-    for index in range(528):
-        layers[f"model.diffusion_model.video_path.{index}"] = {
-            "format": "asym_w4a8_int8"
-        }
+    for block in range(8):
+        base = f"{prefix}.video_embeddings_connector.transformer_1d_blocks.{block}"
+        for suffix in (
+            "attn1.to_k", "attn1.to_out.0", "attn1.to_q", "attn1.to_v",
+            "ff.net.0.proj", "ff.net.2",
+        ):
+            layers[f"{base}.{suffix}"] = {"format": "asym_w4a8_int8"}
+    for block in range(48):
+        base = f"{prefix}.transformer_blocks.{block}"
+        for family in ("attn1", "attn2"):
+            for suffix in ("to_k", "to_out.0", "to_q", "to_v"):
+                layers[f"{base}.{family}.{suffix}"] = {"format": "asym_w4a8_int8"}
+        for suffix in ("net.0.proj", "net.2"):
+            layers[f"{base}.ff.{suffix}"] = {"format": "asym_w4a8_int8"}
     regex = re.compile(REGEX_LTX25_AUDIO_SAFE)
     targets = sorted(name for name in layers if regex.search(name))
     sidecar = {
@@ -104,6 +116,25 @@ class LTX25AudioSafeGuardTests(unittest.TestCase):
 
         with self.assertRaisesRegex(SystemExit, "familias"):
             select_ltx25_q4km_audio_balanced(layers, sidecar)
+
+    def test_q4km_audio_video_q6_exact_recipe(self):
+        layers, _, sidecar = ltx25_fixture()
+
+        int8 = select_ltx25_q4km_audio_video_q6(layers, sidecar)
+        video_q6 = [name for name in layers if is_ltx25_q4km_video_q6(name)]
+
+        self.assertEqual(len(video_q6), 46)
+        self.assertEqual(len(int8), 786)
+        self.assertEqual(len(layers) - len(int8), 654)
+
+    def test_q4km_audio_video_q6_rejects_changed_map(self):
+        layers, _, sidecar = ltx25_fixture()
+        removed = "model.diffusion_model.transformer_blocks.17.attn1.to_v"
+        del layers[removed]
+        layers["model.diffusion_model.video_path.replacement"] = {"format": "asym_w4a8_int8"}
+
+        with self.assertRaisesRegex(SystemExit, "visual Q6_K"):
+            select_ltx25_q4km_audio_video_q6(layers, sidecar)
 
 
 if __name__ == "__main__":
