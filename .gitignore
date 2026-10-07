@@ -36,6 +36,7 @@
 !/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/
 !/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/*.py
 !/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/*.md
+!/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/LICENSE
 /release/**/*.safetensors
 
 # The per-layer measurements themselves, and only those. A `.analysis.json` is ~60 KiB and is the

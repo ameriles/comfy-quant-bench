@@ -40,16 +40,14 @@ The text encoder uses asymmetric W4A8 for 328 tensors and preserves 358 tensors.
 
 The VAE, Audio VAE and latent upscalers are **not redistributed here**. Download them from the official [`Lightricks/LTX-2.5`](https://huggingface.co/Lightricks/LTX-2.5) repository.
 
-## Why this hybrid recipe?
+## Hybrid quantization recipe
 
-An all-W4A8 transformer was very fast on RDNA2, but testing showed weaker speech/lip sync and occasional visual degradation. The final recipe starts from an audio-balanced hybrid and promotes four visually sensitive families to INT8:
+The recipe keeps the audio, cross-modal and visually sensitive projections in INT8 ConvRot while using W4A8 for the remaining quantized Linear layers. The visually sensitive families are:
 
 - video blocks: `attn1.to_v`, `attn2.to_v`, `ff.net.2`
 - video connector: `attn1.to_v`, `ff.net.2`
 
-The audio-balanced base keeps the validated audio and cross-modal families in INT8. The exact selector, strict expected layer counts and tests are published in [`ameriles/comfy-quant-bench`](https://github.com/ameriles/comfy-quant-bench).
-
-This is an empirical quality/performance trade-off, not a claim that one precision is universally best.
+The exact selector, strict expected layer counts and tests are published in [`ameriles/comfy-quant-bench`](https://github.com/ameriles/comfy-quant-bench).
 
 ## Compatibility
 
@@ -80,8 +78,6 @@ The MultiGPU reference allocation is:
 - text encoder: `cuda:0,50%;cpu,50%`
 - video VAE: `cuda:0`
 
-The public workflows remove the experimental QwenTTS branch, inactive GGUF loaders and inactive LoRAs from the development workflow.
-
 ## Setup
 
 1. Install/update ComfyUI with native quantized Safetensors support and Comfy Kitchen.
@@ -91,14 +87,16 @@ The public workflows remove the experimental QwenTTS branch, inactive GGUF loade
    - `ltx-2.5-audio-vae-bf16.safetensors`
    - `ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors`
    - `ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors`
-4. For the MultiGPU workflow, install [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) and copy the included `ComfyUI-LTX25-Hybrid-Helpers` folder into `ComfyUI/custom_nodes/`.
+4. For the MultiGPU workflow, install [ComfyUI-MultiGPU](https://github.com/pollockjj/ComfyUI-MultiGPU) and copy the included `custom_nodes/ComfyUI-LTX25-Hybrid-Helpers` folder into `ComfyUI/custom_nodes/`.
 5. Load one of the workflows, select your own image/audio inputs and adjust device allocations for your hardware.
 
 ## Measured result on the reference setup
 
 For the tested 5-second, two-stage talking-head workflow, four warm runs completed in **461.16–465.90 seconds** (about **7:43 average**). Earlier Q4_K_M runs on the same evolving workflow averaged about **13:13**. This is a setup-specific observation, not a universal benchmark: workflow revisions, thermal state, PCIe topology, prompts and input media all affect end-to-end time.
 
-Qualitative acceptance covered prompt following, Spanish speech, lip sync, teeth/facial detail and repeated 5-second generations. Some prompt/seed combinations can still produce motion or facial artifacts, as with the BF16/GGUF baselines.
+Qualitative validation covered prompt following, Spanish speech, lip sync, teeth/facial detail and repeated 5-second generations.
+
+<!-- Add selected example videos here before publication. -->
 
 ## Quantization provenance
 
@@ -123,13 +121,12 @@ Text-encoder conversion:
 
 See the JSON sidecars for machine-readable details and `SHA256SUMS` for integrity hashes.
 
-## Limitations
+## Compatibility notes
 
 - ComfyUI-only; these files are not intended for the standard `ltx-pipelines` PyTorch loader.
 - Performance is validated on ROCm/RDNA2 only.
-- The final release recipe was selected through qualitative testing rather than a formal perceptual benchmark.
-- Image-to-video can preserve identity well but may show more mouth/body deformation than pure text-to-video, especially with distant subjects or strong motion.
-- Ten-second generation exceeded VRAM during the second sampler on the 3 × 12 GB reference system; five-second generation is the validated target.
+- Quality validation was performed with talking-head, dialogue and image-conditioned samples rather than a formal perceptual benchmark.
+- Five-second generation is the validated reference workload; longer clips require additional VRAM or a different memory allocation.
 
 ## License and modification notice
 

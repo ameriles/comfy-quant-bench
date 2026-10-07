@@ -7,6 +7,17 @@ Two small nodes used by the MultiGPU reference workflow:
 
 Copy this directory into `ComfyUI/custom_nodes/` and restart ComfyUI.
 
+```text
+ComfyUI/
+└── custom_nodes/
+    └── ComfyUI-LTX25-Hybrid-Helpers/
+        ├── __init__.py
+        ├── LICENSE
+        └── README.md
+```
+
+It has no additional Python dependencies beyond ComfyUI and PyTorch.
+
 Tested against ComfyUI `v0.37.0` (`73c9bad`). The auto-tiled node uses private VAE helpers from that ComfyUI version and may need adjustment after upstream VAE API changes.
 
 These helpers are optional. The Simple workflow uses ComfyUI's standard `VAE Decode (Tiled)` node and does not need them.
