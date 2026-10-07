@@ -873,3 +873,45 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 
 Estado completo, o que está rodando e os próximos passos em ordem: `.scratch/HANDOFF_ltx23_2026-09-14.md`.
 Probes do mecanismo copiados para `tools/probe_commit_mmap.py`, `tools/probe_safeopen_trace.py`, `tools/probe_double_map.py`, `tools/probe_cow_offset.py`; novos `tools/safetensors_to_gguf_bf16.py` e `tools/probe_gguf_bf16_equivalence.py` (nenhum commitado ainda).
+
+## 2026-10-05 -- LTX 2.5 Q4_K_M-guided audio balance
+
+Novo preset `ltx25-q4km-audio-balanced` em `tools/quant_misto_w4a8_int8.py`. Ele parte do BF16 e da
+base W4A8 conhecidos, deixa em W4A8 as 172 Linears de áudio que o GGUF de referência guarda em Q4_K e
+promove as 684 Q5_K + 56 Q6_K para INT8 ConvRot. Build concluído: 740 INT8 + 700 W4A8, 13,63 GiB,
+SHA256 `072ecf899806a40542b52be75d5db5ca97c81a792f21b968c7e2244c143f7bad`; cruzamento independente
+de metadata deu zero discrepâncias. Artefato em
+`/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-balanced.safetensors`.
+
+Pendente: loader real e render pareado no workflow do dono. Estrutura, erro por camada e dispatch declarado não
+aprovam áudio, lipsync ou qualidade visual.
+
+## 2026-10-05 -- braço Q6 visual
+
+O dono viu perda visual no 740/700 contra Q4_K_M. Criado `ltx25-q4km-audio-video-q6`: preserva a receita de
+áudio anterior e promove somente as 46 visuais Q6_K. Build **786 INT8 + 654 W4A8**, 14,3159 GiB,
+SHA256 `290d6629f1503a8e1fa675fd71db32a8b237a9cd2efb2d36df43da63d0b6774e`; cruzamento independente
+contra o GGUF deu zero discrepâncias. Arquivo em
+`/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-video-q6-int8.safetensors`.
+
+Pendente: symlink/loader real e comparação pareada com Q4_K_M e 740/700. Se a imagem continuar atrás, o dado
+aponta para as 380 visuais Q5_K que este braço deliberadamente deixou em W4A8.
+
+## 2026-10-07 -- LTX 2.5 híbrido final, pronto para revisão de publicação
+
+O braço escolhido pelo dono é `ltx25-q4km-audio-balanced-visual-sensitive`: as 740 Linears INT8 do
+audio-balanced mais 160 visuais sensíveis, total **900 INT8 + 540 W4A8**. Arquivo final promovido ao
+ComfyUI como `ltx-2.5-22b-distilled-hybrid-w4a8-int8-convrot.safetensors`, 17.045.068.544 B,
+SHA256 `62b39eeb3a3e30a95e59a3e7f04bd344593a10b264cbd6c8fcef1103b576f61d`.
+
+Encoder final: `gemma4-12b-ltx-2.5-w4a8.safetensors`, 10.604.318.782 B, 328 quantizados + 358
+preservados, SHA256 `f3913b7098cb9a5ed235242a1b7d15c53957d926f0a676438461676909802edc`.
+
+A rama limpa local `release/ltx25-hybrid` parte de `b84213a`, leva somente os commits LTX úteis e o
+preset final; os três commits do experimento GGUF ficaram preservados em `ltx25-audio-safe` e não entram
+na release. Materiais em `release/ltx25-hybrid/`: model card, licença LTX-2.x, notice, sidecars públicos,
+checksums, workflows MultiGPU/Simple e os dois helpers usados pelo MultiGPU. QwenTTS, loaders GGUF e
+LoRAs inativos foram removidos dos workflows públicos.
+
+Antes de publicar: revisar diff, rodar varredura de segredos/caminhos, abrir os dois workflows na UI e
+executar pelo menos um smoke real de cada variante que se queira chamar de testada. Não prometer speed-up

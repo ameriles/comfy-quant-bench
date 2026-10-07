@@ -1,0 +1,30 @@
+{
+  "source": {
+    "repository": "Lightricks/LTX-2.5",
+    "path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+    "size": 26263858182
+  },
+  "output": {
+    "path": "gemma4-12b-ltx-2.5-w4a8.safetensors",
+    "size": 10604318782,
+    "sha256": "f3913b7098cb9a5ed235242a1b7d15c53957d926f0a676438461676909802edc"
+  },
+  "architecture": "gemma",
+  "quantization": "asym_w4a8_int8",
+  "layout": "AsymW4A8Int8Layout",
+  "conversion_backend": "comfy_kitchen.backends.eager.w4a8_int8",
+  "group_size": 16,
+  "convrot_groupsize": 256,
+  "symmetric": true,
+  "codebook": true,
+  "quantized_tensors": 328,
+  "preserved_tensors": 358,
+  "environment": {
+    "comfy_kitchen": "0.2.35",
+    "torch": "2.9.1+rocm6.4",
+    "gpu": "AMD Radeon RX 6700 XT"
+  },
+  "conversion_seconds": 84.765,
+  "modified_by": "Agustín Meriles (ameriles)",
+  "modified_at": "2026-10"
+}

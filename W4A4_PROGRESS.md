@@ -6496,3 +6496,65 @@ tudo"; depois medir na GPU e pôr a flag do triton nos launchers. Achados e corr
   - Falta confirmar no navegador do dono.
 - NAS lento (2026-09-29): `ComfyUI/utils/extra_config.py` pula a seção do `extra_model_paths.yaml` que não responde em 10 s. Patch: `patches/comfyui_extra_paths_timeout.patch`.
 - O patch local preexistente de `ComfyUI-nunchaku/models/qwenimage.py` (+46 linhas, origem anterior) foi exportado para `patches/nunchaku_models_qwenimage_preexistente.patch`.
+
+## Parte 72 -- 2026-10-05: LTX 2.5 híbrido guiado pelo mapa do Q4_K_M
+
+Pedido do dono: reduzir o primeiro híbrido de 912 INT8 + 528 W4A8 usando como referência nominal o
+`LTX-2.5-Distilled-Q4_K_M.gguf`, que preserva lipsync no workflow real. Cruzamento por nome das mesmas 912
+Linears: Q4_K 172, Q5_K 684, Q6_K 56. Como o pipeline nativo não oferece W5, a receita conservadora ficou
+Q4_K -> W4A8 e Q5_K/Q6_K -> INT8 ConvRot; os 200 `to_gate_logits` que não pertencem às 1440 Linears
+quantizadas continuam BF16.
+
+- Preset estrito novo: `ltx25-q4km-audio-balanced`; recusa arquitetura/base/contagens diferentes.
+- Resultado: **740 INT8 + 700 W4A8**, 14.637.593.776 B (13,63 GiB), em 168,9 s.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,009257; máximo 0,011003.
+- Auditoria independente do header contra o GGUF: 172 Q4_K -> W4A8, 684 Q5_K -> INT8,
+  56 Q6_K -> INT8; **0 discrepâncias**.
+- GGUF de referência SHA256: `0f51eb0d82b19bddbfb3b0371a65217844ea03750f27dd733528f22152e0e0d0`.
+- Checkpoint SHA256: `072ecf899806a40542b52be75d5db5ca97c81a792f21b968c7e2244c143f7bad`.
+- Arquivo: `/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-balanced.safetensors`.
+- Inventário: `/home/agustin/Models/LTX-2.5-quant-lab/results/ltx25-q4km-audio-balanced-audit.{json,md}`.
+
+Isto aprova estrutura e proveniência, não qualidade. Próximo critério: carregar pelo nó real e repetir o mesmo
+workflow, prompt, seed e distribuição usados no híbrido 912/528, comparando áudio/lipsync, OOM e s/it.
+
+## Parte 73 -- 2026-10-05: LTX 2.5 áudio protegido + Q6 visual em INT8
+
+Depois de o dono observar perda visual do braço 740/700 contra Q4_K_M, o cruzamento das 528 Linears visuais
+mostrou Q4_K 102, Q5_K 380 e Q6_K 46. Promover Q5+Q6 custaria 4,84 GiB; o experimento intermediário promove
+somente as 46 Q6_K visuais, mantendo as 380 Q5_K em W4A8.
+
+- Preset: `ltx25-q4km-audio-video-q6`.
+- Receita final: **786 INT8 + 654 W4A8**; 46 visuais novas = 16 do `video_embeddings_connector`,
+  10 `attn1.to_v`, 10 `attn2.to_v` e 10 `ff.net.2`.
+- Resultado: 15.371.580.168 B (14,3159 GiB), escrito em 213 s.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,0093; máximo 0,0110.
+- Auditoria independente contra o GGUF: áudio 172 Q4->W4A8, 684 Q5+56 Q6->INT8; vídeo
+  102 Q4+380 Q5->W4A8, 46 Q6->INT8; **0 discrepâncias**.
+- Checkpoint SHA256: `290d6629f1503a8e1fa675fd71db32a8b237a9cd2efb2d36df43da63d0b6774e`.
+- Arquivo: `/home/agustin/Models/LTX-2.5-quant-lab/builds/ltx-2.5-22b-distilled-w4a8-q4km-audio-video-q6-int8.safetensors`.
+- Inventário: `/home/agustin/Models/LTX-2.5-quant-lab/results/ltx25-q4km-audio-video-q6-audit.{json,md}`.
+
+Estrutura aprovada; qualidade visual, áudio/lipsync, tempo e VRAM seguem pendentes do render pareado.
+
+## Parte 74 -- 2026-10-07: receita final e preparação da publicação LTX 2.5
+
+Depois dos braços 740/700 e 786/654, o dono validou no workflow real a união do áudio protegido com
+160 Linears visuais sensíveis: `attn1.to_v`, `attn2.to_v` e `ff.net.2` nos 48 blocos, mais
+`attn1.to_v` e `ff.net.2` nos oito blocos do conector de vídeo.
+
+- Preset final: `ltx25-q4km-audio-balanced-visual-sensitive`.
+- Receita: **900 INT8 tensorwise + ConvRot e 540 W4A8**.
+- Resultado publicado: 17.045.068.544 B (15,88 GiB).
+- SHA256: `62b39eeb3a3e30a95e59a3e7f04bd344593a10b264cbd6c8fcef1103b576f61d`.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,0094466; máximo 0,0110030.
+- Testes do seletor: 12/12 passam no ambiente isolado.
+- Aceitação qualitativa do dono: prompt following, fala em espanhol, lipsync, dentes/detalhe facial e
+  várias gerações de cinco segundos; imagem condicionada continua mais sensível que T2V puro.
+- Quatro corridas quentes do workflow de referência: 461,16–465,90 s, média aproximada 7:43.
+  O Q4_K_M no workflow em evolução ficou perto de 13:13; comparação é específica desta bancada.
+
+O pack inclui também o Gemma 4 12B W4A8: 10.604.318.782 B, 328 tensores quantizados + 358
+preservados, SHA256 `f3913b7098cb9a5ed235242a1b7d15c53957d926f0a676438461676909802edc`.
+No caminho CLIP padrão do ComfyUI, W4A8 do encoder deve ser descrito primeiro como economia de
+armazenamento/memória: os locks `full_precision_mm` e `force_cast_weights` podem desquantizar a matemática.

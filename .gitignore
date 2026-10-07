@@ -21,6 +21,24 @@
 # has no remote.
 !/docs/
 
+# Public release bundles are allowlisted file by file. Model payloads remain excluded: this tree
+# carries reproducibility material, workflows and helper source, never the multi-GiB safetensors.
+!/release/
+!/release/ltx25-hybrid/
+!/release/ltx25-hybrid/README.md
+!/release/ltx25-hybrid/LICENSE-LTX-2.x
+!/release/ltx25-hybrid/NOTICE
+!/release/ltx25-hybrid/SHA256SUMS
+!/release/ltx25-hybrid/*.quant.json
+!/release/ltx25-hybrid/workflows/
+!/release/ltx25-hybrid/workflows/*.json
+!/release/ltx25-hybrid/custom_nodes/
+!/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/
+!/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/*.py
+!/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/*.md
+!/release/ltx25-hybrid/custom_nodes/ComfyUI-LTX25-Hybrid-Helpers/LICENSE
+/release/**/*.safetensors
+
 # The per-layer measurements themselves, and only those. A `.analysis.json` is ~60 KiB and is the
 # expensive part of this project to reproduce -- it costs a calibration run on a GPU that is
 # shared with another session. The `.calib.pt` files beside them are the raw activation samples,
