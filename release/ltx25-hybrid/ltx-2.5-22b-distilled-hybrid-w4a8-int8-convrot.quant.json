@@ -1,0 +1,40 @@
+{
+  "source": {
+    "repository": "Lightricks/LTX-2.5",
+    "path": "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+    "size": 42018190584
+  },
+  "w4a8_base": {
+    "description": "Locally generated asymmetric W4A8 intermediate from the official BF16 source",
+    "size": 12520267816
+  },
+  "output": {
+    "path": "ltx-2.5-22b-distilled-hybrid-w4a8-int8-convrot.safetensors",
+    "size": 17045068544,
+    "sha256": "62b39eeb3a3e30a95e59a3e7f04bd344593a10b264cbd6c8fcef1103b576f61d"
+  },
+  "preset": "ltx25-q4km-audio-balanced-visual-sensitive",
+  "selection_regex": "(?:^|\\.)(?:transformer_blocks|[av]udio_embeddings_connector)\\.",
+  "layers": {
+    "int8_tensorwise_convrot": 900,
+    "asym_w4a8_int8": 540
+  },
+  "int8": {
+    "format": "int8_tensorwise",
+    "convrot": true,
+    "convrot_groupsize": 256
+  },
+  "sampled_relative_error_int8_vs_bf16": {
+    "median": 0.009446638636291027,
+    "maximum": 0.011002959683537483,
+    "worst_layer": "model.diffusion_model.transformer_blocks.44.video_to_audio_attn.to_out.0"
+  },
+  "environment": {
+    "comfy_kitchen": "0.2.35",
+    "torch": "2.9.1+rocm6.4",
+    "gpu": "AMD Radeon RX 6700 XT"
+  },
+  "conversion_seconds": 351.9,
+  "modified_by": "Agustín Meriles (ameriles)",
+  "modified_at": "2026-10"
+}

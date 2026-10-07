@@ -1,0 +1,17 @@
+LTX 2.5 22B Distilled — Hybrid W4A8 / INT8 ConvRot for ComfyUI
+
+This distribution contains modified model files derived from LTX 2.5 by
+Lightricks Ltd. The official BF16 transformer and text encoder were quantized
+in October 2026 by Agustín Meriles (ameriles). The files are not official
+Lightricks releases, and no endorsement by Lightricks is implied.
+
+Original sources:
+https://huggingface.co/Lightricks/LTX-2.5
+
+Quantization source and reproducibility materials:
+https://github.com/ameriles/comfy-quant-bench
+
+The model derivative is distributed under the included LTX-2.x Community
+License Agreement. The helper code and workflow JSON files are provided under
+the MIT License of comfy-quant-bench; the LTX license continues to govern the
+model derivative.
