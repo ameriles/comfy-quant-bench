@@ -3002,10 +3002,10 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "Close-up, eye-level shot of a person speaking directly to camera in a quiet studio. Natural facial motion, realistic skin and teeth, subtle hand gestures, soft cinematic lighting. The person says in Spanish: \"Hola, esta es una prueba de diálogo, sincronización labial y movimiento natural.\""
+        "Close-up, eye-level shot of a person speaking directly to camera in a quiet studio. Natural facial motion, realistic skin and teeth, subtle hand gestures, soft cinematic lighting. The person says in English: \"Hi, this is a test of dialogue, lip sync, and natural movement.\""
       ],
       "widgets_values_named": {
-        "text": "Close-up, eye-level shot of a person speaking directly to camera in a quiet studio. Natural facial motion, realistic skin and teeth, subtle hand gestures, soft cinematic lighting. The person says in Spanish: \"Hola, esta es una prueba de diálogo, sincronización labial y movimiento natural.\""
+        "text": "Close-up, eye-level shot of a person speaking directly to camera in a quiet studio. Natural facial motion, realistic skin and teeth, subtle hand gestures, soft cinematic lighting. The person says in English: \"Hi, this is a test of dialogue, lip sync, and natural movement.\""
       },
       "color": "#232",
       "bgcolor": "#353"
