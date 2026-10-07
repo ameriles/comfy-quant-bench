@@ -8,8 +8,11 @@ from quant_misto_w4a8_int8 import (
     REGEX_LTX25_AUDIO_SAFE,
     is_ltx25_q4km_q4,
     is_ltx25_q4km_video_q6,
+    is_ltx25_q4km_sensitive,
     select_ltx25_q4km_audio_balanced,
     select_ltx25_q4km_audio_video_q6,
+    select_ltx25_q4km_optimized,
+    select_ltx25_q4km_audio_balanced_visual_sensitive,
     validate_ltx25_audio_safe,
 )
 
@@ -135,6 +138,49 @@ class LTX25AudioSafeGuardTests(unittest.TestCase):
 
         with self.assertRaisesRegex(SystemExit, "visual Q6_K"):
             select_ltx25_q4km_audio_video_q6(layers, sidecar)
+
+    def test_q4km_optimized_exact_recipe(self):
+        layers, _, sidecar = ltx25_fixture()
+
+        int8 = select_ltx25_q4km_optimized(layers, sidecar)
+
+        self.assertEqual(len(int8), 368)
+        self.assertEqual(len(layers) - len(int8), 1072)
+        self.assertTrue(all(is_ltx25_q4km_sensitive(name) for name in int8))
+
+    def test_q4km_optimized_rejects_changed_map(self):
+        layers, _, sidecar = ltx25_fixture()
+        removed = "model.diffusion_model.transformer_blocks.47.video_to_audio_attn.to_v"
+        del layers[removed]
+        layers["model.diffusion_model.video_path.replacement"] = {"format": "asym_w4a8_int8"}
+
+        with self.assertRaisesRegex(SystemExit, "familias"):
+            select_ltx25_q4km_optimized(layers, sidecar)
+
+    def test_q4km_audio_balanced_visual_sensitive_exact_recipe(self):
+        layers, _, sidecar = ltx25_fixture()
+
+        int8 = select_ltx25_q4km_audio_balanced_visual_sensitive(layers, sidecar)
+
+        self.assertEqual(len(int8), 900)
+        self.assertEqual(len(layers) - len(int8), 540)
+        self.assertEqual(
+            sum(
+                is_ltx25_q4km_sensitive(name)
+                and not re.search(REGEX_LTX25_AUDIO_SAFE, name)
+                for name in int8
+            ),
+            160,
+        )
+
+    def test_q4km_audio_balanced_visual_sensitive_rejects_changed_map(self):
+        layers, _, sidecar = ltx25_fixture()
+        removed = "model.diffusion_model.transformer_blocks.47.attn2.to_v"
+        del layers[removed]
+        layers["model.diffusion_model.video_path.replacement"] = {"format": "asym_w4a8_int8"}
+
+        with self.assertRaisesRegex(SystemExit, "visual"):
+            select_ltx25_q4km_audio_balanced_visual_sensitive(layers, sidecar)
 
 
 if __name__ == "__main__":

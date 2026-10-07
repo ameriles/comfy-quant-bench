@@ -896,3 +896,22 @@ contra o GGUF deu zero discrepâncias. Arquivo em
 
 Pendente: symlink/loader real e comparação pareada com Q4_K_M e 740/700. Se a imagem continuar atrás, o dado
 aponta para as 380 visuais Q5_K que este braço deliberadamente deixou em W4A8.
+
+## 2026-10-07 -- LTX 2.5 híbrido final, pronto para revisão de publicação
+
+O braço escolhido pelo dono é `ltx25-q4km-audio-balanced-visual-sensitive`: as 740 Linears INT8 do
+audio-balanced mais 160 visuais sensíveis, total **900 INT8 + 540 W4A8**. Arquivo final promovido ao
+ComfyUI como `ltx-2.5-22b-distilled-hybrid-w4a8-int8-convrot.safetensors`, 17.045.068.544 B,
+SHA256 `62b39eeb3a3e30a95e59a3e7f04bd344593a10b264cbd6c8fcef1103b576f61d`.
+
+Encoder final: `gemma4-12b-ltx-2.5-w4a8.safetensors`, 10.604.318.782 B, 328 quantizados + 358
+preservados, SHA256 `f3913b7098cb9a5ed235242a1b7d15c53957d926f0a676438461676909802edc`.
+
+A rama limpa local `release/ltx25-hybrid` parte de `b84213a`, leva somente os commits LTX úteis e o
+preset final; os três commits do experimento GGUF ficaram preservados em `ltx25-audio-safe` e não entram
+na release. Materiais em `release/ltx25-hybrid/`: model card, licença LTX-2.x, notice, sidecars públicos,
+checksums, workflows MultiGPU/Simple e os dois helpers usados pelo MultiGPU. QwenTTS, loaders GGUF e
+LoRAs inativos foram removidos dos workflows públicos.
+
+Antes de publicar: revisar diff, rodar varredura de segredos/caminhos, abrir os dois workflows na UI e
+executar pelo menos um smoke real de cada variante que se queira chamar de testada. Não prometer speed-up

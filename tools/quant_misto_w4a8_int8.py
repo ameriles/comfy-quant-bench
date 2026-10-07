@@ -28,6 +28,17 @@ O preset ``ltx25-q4km-audio-video-q6`` acrescenta a essa receita somente as 46 L
 o mesmo GGUF guarda em Q6_K: 16 do conector de video e 30 projecoes de valor/saida nos blocos. Ele
 mantem as 380 visuais Q5_K em W4A8 e produz 786 INT8 + 654 W4A8.
 
+O preset ``ltx25-q4km-optimized`` usa o Q4_K_M como mapa de sensibilidade, sem tentar copiar seus
+formatos literalmente: Q4_K e Q5_K permanecem W4A8, salvo as sete familias que o proprio GGUF
+promove a Q6_K nos blocos Q4. Essas mesmas familias viram INT8 em todos os blocos, incluindo seus
+equivalentes Q5_K. Os conectores preservam em INT8 ``attn1.to_v`` e ``ff.net.2``. Resultado estrito:
+102 equivalentes Q6_K + 266 equivalentes Q5_K sensiveis = 368 INT8; as outras 1072 ficam W4A8.
+
+O preset ``ltx25-q4km-audio-balanced-visual-sensitive`` conserva as 740 Linears INT8 do
+``audio-balanced`` e soma as 160 visuais sensiveis do ``optimized``: ``attn1.to_v``,
+``attn2.to_v`` e ``ff.net.2`` nos blocos, mais ``attn1.to_v`` e ``ff.net.2`` no conector
+de video. Resultado estrito: 900 INT8 + 540 W4A8.
+
     python_embeded\\python.exe -s tools/quant_misto_w4a8_int8.py --fonte P:/ComfyBench/checkpoints/10Eros_v1.5_bf16.safetensors \\
         --w4a8 P:/ComfyBench/checkpoints/10Eros_v1.5_bf16_w4a8.safetensors --dry-run
 """
@@ -55,6 +66,8 @@ REGEX_AUDIO = r"(?:^|\.)(?:audio_attn\d+|audio_ff|audio_to_video_attn|video_to_a
 LTX25_AUDIO_SAFE = "ltx25-audio-safe"
 LTX25_Q4KM_AUDIO_BALANCED = "ltx25-q4km-audio-balanced"
 LTX25_Q4KM_AUDIO_VIDEO_Q6 = "ltx25-q4km-audio-video-q6"
+LTX25_Q4KM_OPTIMIZED = "ltx25-q4km-optimized"
+LTX25_Q4KM_AUDIO_BALANCED_VISUAL_SENSITIVE = "ltx25-q4km-audio-balanced-visual-sensitive"
 LTX25_Q4KM_REFERENCE = {
     "filename": "LTX-2.5-Distilled-Q4_K_M.gguf",
     "sha256": "0f51eb0d82b19bddbfb3b0371a65217844ea03750f27dd733528f22152e0e0d0",
@@ -83,6 +96,9 @@ PRESET_REGEX = {
     LTX25_AUDIO_SAFE: REGEX_LTX25_AUDIO_SAFE,
     LTX25_Q4KM_AUDIO_BALANCED: REGEX_LTX25_AUDIO_SAFE,
     LTX25_Q4KM_AUDIO_VIDEO_Q6: REGEX_LTX25_AUDIO_SAFE,
+    LTX25_Q4KM_OPTIMIZED: r"(?:^|\.)(?:transformer_blocks|[av]udio_embeddings_connector)\.",
+    LTX25_Q4KM_AUDIO_BALANCED_VISUAL_SENSITIVE:
+        r"(?:^|\.)(?:transformer_blocks|[av]udio_embeddings_connector)\.",
 }
 LTX25_Q4KM_Q4_BLOCKS = frozenset((*range(9), 17))
 LTX25_Q4KM_W4A8_FAMILIES = {
@@ -134,6 +150,24 @@ def is_ltx25_q4km_video_q6(name: str) -> bool:
         name,
     )
     return bool(block and int(block.group(1)) in LTX25_Q4KM_Q4_BLOCKS)
+
+
+def is_ltx25_q4km_sensitive(name: str) -> bool:
+    """Mapa Q6_K do GGUF estendido as mesmas familias dentro dos blocos Q5_K."""
+    connector = re.search(
+        r"(?:^|\.)(?:audio|video)_embeddings_connector\.transformer_1d_blocks\.(\d+)\."
+        r"(?:attn1\.to_v|ff\.net\.2)$",
+        name,
+    )
+    if connector:
+        return 0 <= int(connector.group(1)) < 8
+
+    return re.search(
+        r"(?:^|\.)transformer_blocks\.(\d+)\."
+        r"(?:(?:attn1|attn2|audio_attn1|audio_attn2|audio_to_video_attn|"
+        r"video_to_audio_attn)\.to_v|ff\.net\.2)$",
+        name,
+    ) is not None
 
 
 def validate_ltx25_audio_safe(camadas: dict, alvo: list[str], sidecar: dict) -> None:
@@ -240,6 +274,88 @@ def select_ltx25_q4km_audio_video_q6(camadas: dict, sidecar: dict) -> list[str]:
     return int8
 
 
+def select_ltx25_q4km_optimized(camadas: dict, sidecar: dict) -> list[str]:
+    """Protege em INT8 as familias Q6_K e seus homologos nos blocos Q5_K."""
+    all_audio = sorted(name for name in camadas if re.search(REGEX_LTX25_AUDIO_SAFE, name))
+    validate_ltx25_audio_safe(camadas, all_audio, sidecar)
+    int8 = sorted(name for name in camadas if is_ltx25_q4km_sensitive(name))
+    received = {
+        "audio_connector": sum("audio_embeddings_connector" in name for name in int8),
+        "video_connector": sum("video_embeddings_connector" in name for name in int8),
+        "video_attn1": sum(re.search(r"\.transformer_blocks\.\d+\.attn1\.to_v$", name) is not None
+                           for name in int8),
+        "video_attn2": sum(re.search(r"\.transformer_blocks\.\d+\.attn2\.to_v$", name) is not None
+                           for name in int8),
+        "audio_attn1": sum(re.search(r"\.transformer_blocks\.\d+\.audio_attn1\.to_v$", name) is not None
+                           for name in int8),
+        "audio_attn2": sum(re.search(r"\.transformer_blocks\.\d+\.audio_attn2\.to_v$", name) is not None
+                           for name in int8),
+        "audio_to_video": sum(re.search(r"\.transformer_blocks\.\d+\.audio_to_video_attn\.to_v$", name) is not None
+                              for name in int8),
+        "video_to_audio": sum(re.search(r"\.transformer_blocks\.\d+\.video_to_audio_attn\.to_v$", name) is not None
+                              for name in int8),
+        "video_ff": sum(re.search(r"\.transformer_blocks\.\d+\.ff\.net\.2$", name) is not None
+                        for name in int8),
+    }
+    expected = {
+        "audio_connector": 16, "video_connector": 16,
+        "video_attn1": 48, "video_attn2": 48,
+        "audio_attn1": 48, "audio_attn2": 48,
+        "audio_to_video": 48, "video_to_audio": 48, "video_ff": 48,
+    }
+    if received != expected or len(int8) != 368 or len(camadas) - len(int8) != 1072:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_Q4KM_OPTIMIZED} exige 368 INT8 + 1072 W4A8 "
+            f"e familias {expected}; recebeu {len(int8)} + {len(camadas) - len(int8)}, {received}"
+        )
+    return int8
+
+
+def select_ltx25_q4km_audio_balanced_visual_sensitive(
+    camadas: dict, sidecar: dict
+) -> list[str]:
+    """Une o audio validado do balanced as 160 familias visuais sensiveis."""
+    audio_int8 = set(select_ltx25_q4km_audio_balanced(camadas, sidecar))
+    visual_int8 = sorted(
+        name for name in camadas
+        if not re.search(REGEX_LTX25_AUDIO_SAFE, name) and is_ltx25_q4km_sensitive(name)
+    )
+    received = {
+        "video_connector": sum("video_embeddings_connector" in name for name in visual_int8),
+        "video_attn1": sum(
+            re.search(r"\.transformer_blocks\.\d+\.attn1\.to_v$", name) is not None
+            for name in visual_int8
+        ),
+        "video_attn2": sum(
+            re.search(r"\.transformer_blocks\.\d+\.attn2\.to_v$", name) is not None
+            for name in visual_int8
+        ),
+        "video_ff": sum(
+            re.search(r"\.transformer_blocks\.\d+\.ff\.net\.2$", name) is not None
+            for name in visual_int8
+        ),
+    }
+    expected = {
+        "video_connector": 16,
+        "video_attn1": 48,
+        "video_attn2": 48,
+        "video_ff": 48,
+    }
+    int8 = sorted(audio_int8 | set(visual_int8))
+    if received != expected or len(visual_int8) != 160:
+        raise SystemExit(
+            f"RECUSADO: mapa visual do preset "
+            f"{LTX25_Q4KM_AUDIO_BALANCED_VISUAL_SENSITIVE} difere: esperado "
+            f"{expected} (160 camadas), recebeu {received} ({len(visual_int8)} camadas)"
+        )
+    if len(int8) != 900 or len(camadas) - len(int8) != 540:
+        raise SystemExit(
+            f"RECUSADO: preset {LTX25_Q4KM_AUDIO_BALANCED_VISUAL_SENSITIVE} exige "
+            f"900 INT8 + 540 W4A8; recebeu {len(int8)} + {len(camadas) - len(int8)}"
+        )
+    return int8
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -293,6 +409,10 @@ def main() -> int:
         alvo = select_ltx25_q4km_audio_balanced(camadas, side_base_data)
     elif a.preset == LTX25_Q4KM_AUDIO_VIDEO_Q6:
         alvo = select_ltx25_q4km_audio_video_q6(camadas, side_base_data)
+    elif a.preset == LTX25_Q4KM_OPTIMIZED:
+        alvo = select_ltx25_q4km_optimized(camadas, side_base_data)
+    elif a.preset == LTX25_Q4KM_AUDIO_BALANCED_VISUAL_SENSITIVE:
+        alvo = select_ltx25_q4km_audio_balanced_visual_sensitive(camadas, side_base_data)
     for n in alvo:
         info = hf.get(n + ".weight")
         if info is None or len(info["shape"]) != 2:

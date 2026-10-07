@@ -6536,3 +6536,25 @@ somente as 46 Q6_K visuais, mantendo as 380 Q5_K em W4A8.
 - Inventário: `/home/agustin/Models/LTX-2.5-quant-lab/results/ltx25-q4km-audio-video-q6-audit.{json,md}`.
 
 Estrutura aprovada; qualidade visual, áudio/lipsync, tempo e VRAM seguem pendentes do render pareado.
+
+## Parte 74 -- 2026-10-07: receita final e preparação da publicação LTX 2.5
+
+Depois dos braços 740/700 e 786/654, o dono validou no workflow real a união do áudio protegido com
+160 Linears visuais sensíveis: `attn1.to_v`, `attn2.to_v` e `ff.net.2` nos 48 blocos, mais
+`attn1.to_v` e `ff.net.2` nos oito blocos do conector de vídeo.
+
+- Preset final: `ltx25-q4km-audio-balanced-visual-sensitive`.
+- Receita: **900 INT8 tensorwise + ConvRot e 540 W4A8**.
+- Resultado publicado: 17.045.068.544 B (15,88 GiB).
+- SHA256: `62b39eeb3a3e30a95e59a3e7f04bd344593a10b264cbd6c8fcef1103b576f61d`.
+- Erro INT8 vs BF16 durante a conversão: mediana 0,0094466; máximo 0,0110030.
+- Testes do seletor: 12/12 passam no ambiente isolado.
+- Aceitação qualitativa do dono: prompt following, fala em espanhol, lipsync, dentes/detalhe facial e
+  várias gerações de cinco segundos; imagem condicionada continua mais sensível que T2V puro.
+- Quatro corridas quentes do workflow de referência: 461,16–465,90 s, média aproximada 7:43.
+  O Q4_K_M no workflow em evolução ficou perto de 13:13; comparação é específica desta bancada.
+
+O pack inclui também o Gemma 4 12B W4A8: 10.604.318.782 B, 328 tensores quantizados + 358
+preservados, SHA256 `f3913b7098cb9a5ed235242a1b7d15c53957d926f0a676438461676909802edc`.
+No caminho CLIP padrão do ComfyUI, W4A8 do encoder deve ser descrito primeiro como economia de
+armazenamento/memória: os locks `full_precision_mm` e `force_cast_weights` podem desquantizar a matemática.
